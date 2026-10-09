@@ -165,6 +165,24 @@ class Loan:
         self._return_date = None
         self._status = self.ISSUED
         self._fine = Money(0)
+        self._issue_registered = False
+    
+    @property
+    def issue_registered(self):
+        return self._issue_registered
+
+    def mark_issue_registered(self):
+        if self._issue_registered:
+            raise DomainInvariantViolation(
+                "Эта выдача уже учтена."
+            )
+
+        if self._status != self.ISSUED:
+            raise DomainInvariantViolation(
+                "Нельзя учесть закрытую выдачу."
+            )
+
+        self._issue_registered = True    
 
     @property
     def id(self):
@@ -234,7 +252,13 @@ class LibraryService:
                 "Выдача связана с другим экземпляром книги."
             )
 
+        if loan.issue_registered:
+            raise DomainInvariantViolation(
+                "Эта выдача уже учтена."
+            )
+
         book_copy.issue_copy()
+        loan.mark_issue_registered()
 
     
     def return_book(
@@ -265,7 +289,6 @@ class LibraryService:
 
         loan.close(return_date)
         book_copy.return_copy()
-
 
 
 # Интерфейсы репозиториев
@@ -379,6 +402,7 @@ class LoanFactory:
             LoanDate(issue_date),
             LoanTerm(term_days),
         )
+        loan._issue_registered = True
 
         if status == Loan.ISSUED:
             if return_date is not None or saved_fine.rubles != 0:
