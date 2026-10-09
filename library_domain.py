@@ -236,6 +236,7 @@ class LibraryService:
 
         book_copy.issue_copy()
 
+    
     def return_book(
         self,
         loan: Loan,
@@ -245,6 +246,21 @@ class LibraryService:
         if loan.copy_id != book_copy.id:
             raise DomainInvariantViolation(
                 "Выдача связана с другим экземпляром книги."
+            )
+
+        if loan.status != Loan.ISSUED:
+            raise DomainInvariantViolation(
+                "Эта выдача уже закрыта."
+            )
+
+        if book_copy.available_quantity >= book_copy.quantity:
+            raise DomainInvariantViolation(
+                "Нет выданных экземпляров для возврата."
+            )
+
+        if return_date.value < loan.issue_date:
+            raise DomainInvariantViolation(
+                "Дата возврата не может быть раньше даты выдачи."
             )
 
         loan.close(return_date)
@@ -300,3 +316,92 @@ class InMemoryLoanRepository:
 
     def save(self, loan: Loan) -> None:
         self._items[loan.id] = loan
+
+
+
+# Фабрика восстановления экземпляра книги
+
+class BookCopyFactory:
+    @staticmethod
+    def restore(state: dict) -> BookCopy:
+        copy_id = EntityId(state["id"])
+        book_id = EntityId(state["book_id"])
+        quantity = CopyQuantity(state["quantity"])
+        active_loans = state["active_loans"]
+
+        if (
+            isinstance(active_loans, bool)
+            or not isinstance(active_loans, int)
+            or active_loans < 0
+            or active_loans > quantity.value
+        ):
+            raise DomainInvariantViolation(
+                "Некорректное количество выданных экземпляров."
+            )
+
+        book_copy = BookCopy(copy_id, book_id, quantity)
+        book_copy._active_loans = active_loans
+
+        return book_copy
+
+
+# Фабрика восстановления выдачи книги
+
+class LoanFactory:
+    @staticmethod
+    def restore(state: dict) -> Loan:
+        loan_id = EntityId(state["id"])
+        reader_id = EntityId(state["reader_id"])
+        copy_id = EntityId(state["copy_id"])
+
+        issue_date = state["issue_date"]
+        due_date = state["due_date"]
+        return_date = state["return_date"]
+        status = state["status"]
+        saved_fine = Money(state["fine"])
+
+        if not isinstance(issue_date, date) or not isinstance(due_date, date):
+            raise DomainInvariantViolation(
+                "Некорректные даты выдачи или возврата."
+            )
+
+        if due_date <= issue_date:
+            raise DomainInvariantViolation(
+                "Срок возврата должен быть позже даты выдачи."
+            )
+
+        term_days = (due_date - issue_date).days
+
+        loan = Loan(
+            loan_id,
+            reader_id,
+            copy_id,
+            LoanDate(issue_date),
+            LoanTerm(term_days),
+        )
+
+        if status == Loan.ISSUED:
+            if return_date is not None or saved_fine.rubles != 0:
+                raise DomainInvariantViolation(
+                    "У активной выдачи не должно быть даты возврата или штрафа."
+                )
+
+        elif status == Loan.CLOSED:
+            if not isinstance(return_date, date):
+                raise DomainInvariantViolation(
+                    "Для закрытой выдачи необходима дата возврата."
+                )
+
+            loan.close(LoanDate(return_date))
+
+            if loan.fine != saved_fine:
+                raise DomainInvariantViolation(
+                    "Сохранённая сумма штрафа не соответствует правилам."
+                )
+
+        else:
+            raise DomainInvariantViolation(
+                "Неизвестный статус выдачи книги."
+            )
+
+        return loan
