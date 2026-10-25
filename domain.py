@@ -23,6 +23,15 @@ class InvalidValueObject(DomainInvariantViolation):
     """Некорректное значение объекта."""
 
 
+class EntityNotFound(DomainInvariantViolation):
+    """Сущность не найдена в репозитории.
+
+    Наследуется от DomainInvariantViolation, чтобы код домена, который
+    ловит DomainInvariantViolation, продолжал работать; веб-адаптер
+    регистрирует отдельный обработчик на 404 (по MRO Flask выберет его).
+    """
+
+
 class TransitionNotAllowed(Exception):
     """Событие недопустимо в текущем состоянии сущности."""
 
@@ -842,6 +851,8 @@ class LoanRepository(Protocol):
 
 # ---------------------------------------------------------------------------
 # Реализация репозиториев в памяти
+# (изменение: get_by_id выбрасывает EntityNotFound, а не общий
+# DomainInvariantViolation — это нужно веб-адаптеру для кода 404)
 # ---------------------------------------------------------------------------
 
 class InMemoryBookCopyRepository:
@@ -850,7 +861,7 @@ class InMemoryBookCopyRepository:
 
     def get_by_id(self, copy_id: EntityId) -> BookCopy:
         if copy_id not in self._items:
-            raise DomainInvariantViolation("Экземпляр книги не найден.")
+            raise EntityNotFound("Экземпляр книги не найден.")
         return self._items[copy_id]
 
     def save(self, book_copy: BookCopy) -> None:
@@ -868,7 +879,7 @@ class InMemoryLoanRepository:
 
     def get_by_id(self, loan_id: EntityId) -> Loan:
         if loan_id not in self._items:
-            raise DomainInvariantViolation("Запись о выдаче книги не найдена.")
+            raise EntityNotFound("Запись о выдаче книги не найдена.")
         return self._items[loan_id]
 
     def save(self, loan: Loan) -> None:

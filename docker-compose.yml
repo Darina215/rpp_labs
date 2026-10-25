@@ -3,31 +3,26 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    network_mode: host
+    image: library-app:lab3
+    container_name: library-app
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
     environment:
-      DB_USER: app
-      DB_PASSWORD: changeme
-      DB_HOST: localhost
-      DB_PORT: 5432
-      DB_NAME: visits_db
-    depends_on:
-      db:
-        condition: service_healthy
-
-  db:
-    image: postgres:16
-    network_mode: host
-    environment:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: changeme
-      POSTGRES_DB: visits_db
+      PORT: "${PORT:-8000}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      SEED_DATA: "true"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app -d visits_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-volumes:
-  postgres_data:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import os, urllib.request
+          urllib.request.urlopen(
+              "http://127.0.0.1:" + os.environ.get("PORT", "8000") + "/health"
+          )
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped

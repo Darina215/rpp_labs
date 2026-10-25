@@ -4,8 +4,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Optional
 
+from application import ClockMovedBackwards
 from domain import EntityId, Money
 
+
+# ---------------------------------------------------------------------------
+# Часы
+# ---------------------------------------------------------------------------
 
 class SystemClock:
     """Системное время (только здесь, за пределами домена и прикладного слоя)."""
@@ -30,6 +35,35 @@ class ManualClock:
         self._now += timedelta(**kwargs)
 
 
+class AppClock:
+    """Системное время со сдвигом (для веб-адаптера).
+
+    Требование методички (Раздел IV, задача 4.1, п. 6): перевод часов
+    приложения назад не допускается. Сдвиг хранится отдельно от системного
+    времени, поэтому ``now()`` возвращает системное время плюс сдвиг.
+    """
+
+    def __init__(self):
+        self._offset = timedelta(0)
+
+    def now(self) -> datetime:
+        return datetime.now() + self._offset
+
+    def set_to(self, target: datetime) -> None:
+        system_now = datetime.now()
+        current = system_now + self._offset
+        if target < current:
+            raise ClockMovedBackwards(
+                f"Нельзя перевести часы назад: "
+                f"{target.isoformat()} < {current.isoformat()}"
+            )
+        self._offset = target - system_now
+
+
+# ---------------------------------------------------------------------------
+# Очередь на книгу
+# ---------------------------------------------------------------------------
+
 class InMemoryReservationQueue:
     def __init__(self):
         self._queues: dict = {}
@@ -49,6 +83,10 @@ class InMemoryReservationQueue:
         return queue.pop(0) if queue else None
 
 
+# ---------------------------------------------------------------------------
+# Журнал штрафов
+# ---------------------------------------------------------------------------
+
 class InMemoryFineLedger:
     def __init__(self):
         self._unpaid: dict = {}
@@ -63,6 +101,10 @@ class InMemoryFineLedger:
         self._unpaid.pop(reader_id, None)
 
 
+# ---------------------------------------------------------------------------
+# Реестр читательских билетов
+# ---------------------------------------------------------------------------
+
 class InMemoryReaderCardRegistry:
     def __init__(self):
         self._blocked: set = set()
@@ -73,6 +115,10 @@ class InMemoryReaderCardRegistry:
     def is_blocked(self, reader_id: EntityId) -> bool:
         return reader_id in self._blocked
 
+
+# ---------------------------------------------------------------------------
+# Администрация
+# ---------------------------------------------------------------------------
 
 class InMemoryAdministration:
     def __init__(self):
